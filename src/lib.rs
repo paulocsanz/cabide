@@ -1,14 +1,14 @@
 mod error;
 
-use crate::error::Error;
+pub use crate::error::Error;
 
-use serde_json::{from_reader, to_string};
+use bincode::{serialize, deserialize_from};
 use serde::{de::DeserializeOwned, Serialize};
-use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions, marker::PhantomData, path::Path};
 
-/// Each block has ending byte to identify when it ends (therefore zero bytes
-const END_BLOCK: u8 = 1;
+/// Each block has ending byte to identify when data ends (and where the zero padding starts)
+const END_BLOCK: u8 = 8;
 
 /// Size of blocks data is written/read on
 ///
@@ -17,7 +17,7 @@ const END_BLOCK: u8 = 1;
 /// Bigger blocks mean more zero padding to fill the entire block
 const BLOCK_SIZE: u64 = 20;
 
-/// Available space in each block to hold content (currently there are 2 bytes of padding per block
+/// Available space in each block to hold content (currently there are 2 bytes of padding per block)
 const CONTENT_SIZE: u64 = BLOCK_SIZE - 2;
 
 #[derive(PartialEq, Copy, Clone)]
@@ -55,29 +55,32 @@ impl Metadata {
 /// # fn random_data() -> Data {
 /// #     // this is slow af since it doesn't cache thread_rng
 /// #     Data {
-/// #         name: (0..10)
+/// #         name: (0..5)
 /// #             .map(|_| Alphanumeric.sample(&mut thread_rng()))
 /// #             .collect(),
 /// #         maybe_number: Some(random()).filter(|_| random()),
 /// #     }
 /// # }
 ///
+/// # fn main() -> Result<(), cabide::Error> {
 /// // Opens file pre-filling it, creates it since it's first run
-/// # std::fs::File::create("test.file").unwrap();
-/// let mut cbd: Cabide<Data> = Cabide::new("test.file", Some(1000)).unwrap();
-/// assert_eq!(cbd.blocks().unwrap(), 1000);
+/// # std::fs::File::create("test.file")?;
+/// let mut cbd: Cabide<Data> = Cabide::new("test.file", Some(1000))?;
+/// assert_eq!(cbd.blocks()?, 1000);
 ///
-/// // Writes continuously from last block
+/// // Since this data only uses one block it writes continuously from last block
 /// for i in 0..100 {
-///     assert_eq!(cbd.write(&random_data()).unwrap(), i);
+///     assert_eq!(cbd.write(&random_data())?, i);
 /// }
 ///
-/// cbd.remove(30).unwrap();
-/// cbd.remove(31).unwrap();
+/// cbd.remove(40)?;
+/// cbd.remove(30)?;
 ///
 /// // Since there are empty blocks in the middle of the file we re-use one of them
-/// assert_eq!(cbd.write(&random_data()).unwrap(), 31);
-/// # std::fs::remove_file("test.file").unwrap();
+/// assert_eq!(cbd.write(&random_data())?, 30);
+/// # std::fs::remove_file("test.file")?;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug)]
 pub struct Cabide<T> {
@@ -103,17 +106,20 @@ impl<T> Cabide<T> {
     /// use cabide::Cabide;
     ///
     /// // Opens file without pre-filling it, creates it since it's first run
-    /// let mut cbd: Cabide<u8> = Cabide::new("test2.file", None).unwrap();
-    /// assert_eq!(cbd.blocks().unwrap(), 0);
+    /// # fn main() -> Result<(), cabide::Error> {
+    /// let mut cbd: Cabide<u8> = Cabide::new("test2.file", None)?;
+    /// assert_eq!(cbd.blocks()?, 0);
     ///
     /// // Re-opens file now pre-filling it
-    /// cbd = Cabide::new("test2.file", Some(1000)).unwrap();
-    /// assert_eq!(cbd.blocks().unwrap(), 1000);
+    /// cbd = Cabide::new("test2.file", Some(1000))?;
+    /// assert_eq!(cbd.blocks()?, 1000);
     ///
     /// // Re-opens the file asking for less blocks than available, only to be ignored
-    /// cbd = Cabide::new("test2.file", Some(30)).unwrap();
-    /// assert_eq!(cbd.blocks().unwrap(), 1000);
-    /// # std::fs::remove_file("test2.file").unwrap();
+    /// cbd = Cabide::new("test2.file", Some(30))?;
+    /// assert_eq!(cbd.blocks()?, 1000);
+    /// # std::fs::remove_file("test2.file")?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn new(filename: impl AsRef<Path>, mut blocks: Option<u64>) -> Result<Self, Error> {
         let mut file = OpenOptions::new()
@@ -126,7 +132,7 @@ impl<T> Cabide<T> {
         let current_length = file.metadata()?.len();
         // If file already has data we need to parse it to generate an up-to-date Cabide
         if current_length > 0 {
-            next_block = Some(((current_length as f64) / (BLOCK_SIZE as f64)).ceil() as u64 + 1);
+            next_block = Some(((current_length as f64) / (BLOCK_SIZE as f64)).ceil() as u64);
 
             // If less pre-filled blocks than currently exist are asked for we ignore them
             blocks = blocks.filter(|blocks| next_block.map_or(0, |b| b - 1) < *blocks);
@@ -139,26 +145,26 @@ impl<T> Cabide<T> {
                 let mut metadata: [u8; 1] = [0];
 
                 file.seek(SeekFrom::Start(curr_block * BLOCK_SIZE))?;
-                match file.read_exact(&mut metadata[..1]).map_err(|e| e.kind()) {
-                    Ok(()) => {},
-                    Err(io::ErrorKind::UnexpectedEof) => break,
-                    Err(err) => return Err(io::Error::from(err).into()),
+                if Read::by_ref(&mut file).take(1).read(&mut metadata)? == 0 {
+                    // EOF
+                    break;
                 }
 
-                if let Some((current, size)) = &mut empty_block {
-                    if metadata[0] == 0 {
+                if let Some((current, mut size)) = empty_block.take() {
+                    if metadata[0] == Metadata::Empty as u8 {
                         // Free blocks chain keeps going
-                        *size += 1;
+                        size += 1;
+                        empty_block = Some((current, size));
                     } else {
                         // Free blocks chain ended, we must store it
                         empty_blocks
-                            .entry(*size)
-                            .and_modify(|vec: &mut Vec<u64>| vec.push(*current))
-                            .or_insert_with(|| vec![*current]);
+                            .entry(size)
+                            .and_modify(|vec: &mut Vec<u64>| vec.push(current))
+                            .or_insert_with(|| vec![current]);
                     }
-                } else {
+                } else if metadata[0] == Metadata::Empty as u8 {
                     // First block of empty chain
-                    empty_block = Some((curr_block, 0));
+                    empty_block = Some((curr_block, 1));
                 }
             }
         }
@@ -185,8 +191,12 @@ impl<T> Cabide<T> {
     /// use cabide::Cabide;
     ///
     /// // Opens file without pre-filling it, creates it since it's first run
-    /// let mut cbd: Cabide<u8> = Cabide::new("test10.file", Some(1000)).unwrap();
-    /// assert_eq!(cbd.blocks().unwrap(), 1000);
+    /// # fn main() -> Result<(), cabide::Error> {
+    /// let mut cbd: Cabide<u8> = Cabide::new("test10.file", Some(1000))?;
+    /// assert_eq!(cbd.blocks()?, 1000);
+    /// # std::fs::remove_file("test10.file")?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn blocks(&self) -> Result<u64, Error> {
         Ok(((self.file.metadata()?.len() as f64) / (BLOCK_SIZE as f64)).ceil() as u64)
@@ -197,9 +207,10 @@ impl<T: DeserializeOwned> Cabide<T> {
     fn read_update_metadata(
         &mut self,
         block: u64,
-        update_metadata: Option<Metadata>,
+        empty_read_blocks: bool,
     ) -> Result<T, Error> {
-        let mut content = String::new();
+        let mut content = vec![];
+        let mut empty_block = None;
         self.file.seek(SeekFrom::Start(block * BLOCK_SIZE))?;
 
         let mut metadata = [0];
@@ -209,12 +220,6 @@ impl<T: DeserializeOwned> Cabide<T> {
             if Read::by_ref(&mut self.file).take(1).read(&mut metadata)? == 0 {
                 // EOF
                 break;
-            }
-
-            // Overwrite the metadata if needed (in case of removal)
-            if let Some(new_metadata) = update_metadata {
-                self.file.seek(SeekFrom::Current(-1))?;
-                self.file.write(&[new_metadata as u8])?;
             }
 
             if content.len() == 0 && metadata[0] != expected_metadata as u8 {
@@ -231,7 +236,19 @@ impl<T: DeserializeOwned> Cabide<T> {
                 break;
             }
 
-            Read::by_ref(&mut self.file).take(CONTENT_SIZE).read_to_string(&mut content)?;
+            // Overwrite the metadata if needed (in case of removal)
+            if empty_read_blocks {
+                if let Some((_, blocks)) = &mut empty_block {
+                    *blocks += 1;
+                } else {
+                    empty_block = Some((block, 1));
+                }
+
+                self.file.seek(SeekFrom::Current(-1))?;
+                self.file.write(&[Metadata::Empty as u8])?;
+            }
+
+            Read::by_ref(&mut self.file).take(CONTENT_SIZE).read(&mut content)?;
 
             // Every block ends with END_BLOCK, so we can skip it
             self.file.seek(SeekFrom::Current(1))?;
@@ -240,18 +257,25 @@ impl<T: DeserializeOwned> Cabide<T> {
             expected_metadata = Metadata::Continuation;
         }
 
+        if let Some((index, size)) = empty_block {
+            self.empty_blocks
+                .entry(size)
+                .and_modify(|vec| vec.push(index as u64))
+                .or_insert_with(|| vec![index as u64]);
+        }
+
         // Objects may be padded with Metadata::Empty, so we must truncate it
-        while content.as_bytes().last() == Some(&(Metadata::Empty as u8)) {
+        while content.last() == Some(&(Metadata::Empty as u8)) {
             content.truncate(content.len() - 1);
         }
 
         // Skips END_BLOCK if it was read
-        if content.as_bytes().last() == Some(&END_BLOCK) {
+        if content.last() == Some(&END_BLOCK) {
             content.truncate(content.len() - 1);
         }
 
         let cursor = Cursor::new(content);
-        let obj = from_reader(cursor)?;
+        let obj = deserialize_from(cursor)?;
         Ok(obj)
     }
 
@@ -260,24 +284,27 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// ```rust
     /// use cabide::Cabide;
     ///
+    /// # fn main() -> Result<(), cabide::Error> {
     /// // Opens file pre-filling it, creates it since it's first run
-    /// let mut cbd: Cabide<u8> = Cabide::new("test3.file", None).unwrap();
+    /// let mut cbd: Cabide<u8> = Cabide::new("test3.file", None)?;
     ///
     /// // Writes continuously from last block
     /// for i in 0..100 {
-    ///     cbd.write(&i).unwrap();
+    ///     cbd.write(&i)?;
     /// }
     ///
-    /// assert_eq!(cbd.remove(30).unwrap(), 30);
-    /// assert_eq!(cbd.remove(3).unwrap(), 3);
+    /// assert_eq!(cbd.remove(30)?, 30);
+    /// assert_eq!(cbd.remove(3)?, 3);
     ///
     /// // Writing re-uses freed blocks in the middle of the file (using the last ones first)
-    /// cbd.write(&30).unwrap();
-    /// assert_eq!(cbd.remove(30).unwrap(), 30);
-    /// # std::fs::remove_file("test3.file").unwrap();
+    /// assert_eq!(cbd.write(&100)?, 3);
+    /// assert_eq!(cbd.remove(3)?, 100);
+    /// # std::fs::remove_file("test3.file")?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn remove(&mut self, block: u64) -> Result<T, Error> {
-        self.read_update_metadata(block, Some(Metadata::Empty))
+        self.read_update_metadata(block, true)
     }
 
     /// Reads type from specified starting block (and its continuations)
@@ -286,18 +313,21 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// use cabide::Cabide;
     ///
     /// // Opens file pre-filling it, creates it since it's first run
-    /// let mut cbd: Cabide<u8> = Cabide::new("test4.file", None).unwrap();
+    /// # fn main() -> Result<(), cabide::Error> {
+    /// let mut cbd: Cabide<u8> = Cabide::new("test4.file", None)?;
     ///
     /// for i in 0..100 {
-    ///     cbd.write(&i).unwrap();
+    ///     cbd.write(&i)?;
     /// }
     ///
-    /// assert_eq!(cbd.read(30).unwrap(), 30);
-    /// assert_eq!(cbd.read(3).unwrap(), 3);
-    /// # std::fs::remove_file("test4.file").unwrap();
+    /// assert_eq!(cbd.read(30)?, 30);
+    /// assert_eq!(cbd.read(3)?, 3);
+    /// # std::fs::remove_file("test4.file")?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn read(&mut self, block: u64) -> Result<T, Error> {
-        self.read_update_metadata(block, None)
+        self.read_update_metadata(block, false)
     }
 
     /// Returns first element to be selected by the `filter` function
@@ -328,23 +358,26 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// # }
     ///
     /// // Opens file pre-filling it, creates it since it's first run
-    /// let mut cbd: Cabide<Student> = Cabide::new("test5.file", Some(1000)).unwrap();
-    /// assert_eq!(cbd.blocks().unwrap(), 1000);
+    /// # fn main() -> Result<(), cabide::Error> {
+    /// let mut cbd: Cabide<Student> = Cabide::new("test5.file", Some(1000))?;
+    /// assert_eq!(cbd.blocks()?, 1000);
     ///
     /// cbd.write(&Student {
     ///     name: "Mr Legit Student".to_owned(),
     ///     dre: 10101010,
     ///     classes: vec![3],
-    /// }).unwrap();
+    /// })?;
     ///
     /// // Writes continuously from last block
     /// for i in 0..20 {
-    ///     cbd.write(&random_student(vec![1023, 8, 13])).unwrap();
+    ///     cbd.write(&random_student(vec![1023, 8, 13]))?;
     /// }
     ///
     /// let student = cbd.first(|student| student.dre == 10101010).unwrap();
     /// assert_eq!(&student.name, "Mr Legit Student");
-    /// # std::fs::remove_file("test5.file").unwrap();
+    /// # std::fs::remove_file("test5.file")?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn first(&mut self, filter: impl Fn(&T) -> bool) -> Option<T> {
         for block in 0..self.blocks().unwrap_or(0) {
@@ -388,22 +421,24 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// # }
     ///
     /// // Opens file pre-filling it, creates it since it's first run
-    /// let mut cbd: Cabide<Student> = Cabide::new("test6.file", Some(1000)).unwrap();
-    /// # std::fs::File::create("test.file").unwrap();
+    /// # fn main() -> Result<(), cabide::Error> {
+    /// let mut cbd: Cabide<Student> = Cabide::new("test6.file", Some(1000))?;
     /// cbd.write(&Student {
     ///     name: "Mr Legit Student".to_owned(),
     ///     dre: 10101010,
     ///     classes: vec![3],
-    /// }).unwrap();
+    /// })?;
     ///
     /// // Writes continuously from last block
     /// for i in 0..20 {
-    ///     cbd.write(&random_student(vec![1023, 8, 13])).unwrap();
+    ///     cbd.write(&random_student(vec![1023, 8, 13]))?;
     /// }
     ///
     /// let students = cbd.filter(|student| student.classes.contains(&1023));
     /// assert_eq!(students.len(), 20);
-    /// # std::fs::remove_file("test6.file").unwrap();
+    /// # std::fs::remove_file("test6.file")?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn filter(&mut self, filter: impl Fn(&T) -> bool) -> Vec<T> {
         let mut vec = vec![];
@@ -432,22 +467,26 @@ impl<T: Serialize> Cabide<T> {
     /// ```
     /// use cabide::Cabide;
     ///
-    /// let mut cbd: Cabide<u8> = Cabide::new("test7.file", None).unwrap();
+    /// # fn main() -> Result<(), cabide::Error> {
+    /// # std::fs::File::create("test7.file")?;
+    /// let mut cbd: Cabide<u8> = Cabide::new("test7.file", None)?;
     ///
     /// // Writes continuously from last block
     /// for i in 0..1000 {
-    ///     assert_eq!(cbd.write(&rand::random()).unwrap(), i);
+    ///     assert_eq!(cbd.write(&rand::random())?, i);
     /// }
     ///
-    /// cbd.remove(30);
-    /// cbd.remove(58);
+    /// cbd.remove(30)?;
+    /// cbd.remove(58)?;
     ///
     /// // Since there are empty blocks in the middle of the file we re-use one of them
-    /// assert_eq!(cbd.write(&rand::random()).unwrap(), 58);
-    /// # std::fs::remove_file("test7.file").unwrap();
+    /// assert_eq!(cbd.write(&rand::random())?, 58);
+    /// # std::fs::remove_file("test7.file")?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn write(&mut self, obj: &T) -> Result<u64, Error> {
-        let raw = to_string(obj)?;
+        let raw = serialize(obj)?;
         let blocks_needed = raw.len() / (CONTENT_SIZE as usize);
 
         let (mut starting_block, mut remaining_blocks) = (None, None);
@@ -459,7 +498,7 @@ impl<T: Serialize> Cabide<T> {
                 // We return the blocks we don't need to the empty_blocks list
                 if blocks_needed < *blocks {
                     let index = starting_block.unwrap() as usize;
-                    remaining_blocks = Some((blocks - blocks_needed, index + blocks_needed));
+                    remaining_blocks = Some((*blocks - blocks_needed, index + blocks_needed));
                 }
 
                 break;
@@ -495,7 +534,7 @@ impl<T: Serialize> Cabide<T> {
         let (mut written, mut blocks, mut metadata) = (0, 0, Metadata::Start);
         // Split encoded data in chunks, appending the metadata to each block before writing the chunks
         // (and each END_BLOCK)
-        for buff in raw.as_bytes().chunks((BLOCK_SIZE as usize) - 2) {
+        for buff in raw.chunks((BLOCK_SIZE as usize) - 2) {
             written += self.file.write(&[metadata as u8])?;
             written += self.file.write(buff)?;
             written += self.file.write(&[END_BLOCK])?;
@@ -550,8 +589,6 @@ mod tests {
 
     #[test]
     fn persistance() {
-        std::fs::remove_file("cabide.test").unwrap();
-
         let mut cbd: Cabide<Data> = Cabide::new("cabide.test", None).unwrap();
         cbd.file.set_len(0).unwrap();
 
@@ -583,13 +620,11 @@ mod tests {
             blocks[*i as usize] = (block, data);
         }
 
-        /*
         cbd = Cabide::new("cabide.test", Some(10)).unwrap();
 
         for (block, data) in blocks {
-            println!("{} {:?}", block, data);
             assert_eq!(cbd.read(block).unwrap(), data);
         }
-        */
+        std::fs::remove_file("cabide.test").unwrap();
     }
 }

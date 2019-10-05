@@ -1,10 +1,9 @@
-use std::io;
+use std::{io, fmt};
 
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
-    Serde(serde_json::Error),
-    //Bincode(Box<bincode::ErrorKind>),
+    Bincode(Box<bincode::ErrorKind>),
     ContinuationBlock,
     EmptyBlock
 }
@@ -15,16 +14,21 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<serde_json::Error> for Error {
-    fn from(err: serde_json::Error) -> Self {
-        Self::Serde(err)
-    }
-}
-
-/*
 impl From<Box<bincode::ErrorKind>> for Error {
     fn from(err: Box<bincode::ErrorKind>) -> Self {
         Self::Bincode(err)
     }
 }
-*/
+
+impl fmt::Display for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::Io(err) => write!(fmt, "{}", err.to_string()),
+            Error::Bincode(err) => write!(fmt, "{}", err.to_string()),
+            Error::ContinuationBlock => write!(fmt, "Continuation Block"),
+            Error::EmptyBlock => write!(fmt, "Empty Block"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
