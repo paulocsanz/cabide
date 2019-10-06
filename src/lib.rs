@@ -1,41 +1,19 @@
 mod error;
+mod protocol;
 
 pub use crate::error::Error;
+use crate::protocol::{END_BYTE, BLOCK_SIZE, CONTENT_SIZE, Metadata};
 
-use serde_json::{to_string, from_reader};
+use bincode::{serialize, deserialize_from};
 use serde::{de::DeserializeOwned, Serialize};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions, marker::PhantomData, path::Path};
-
-/// Size of blocks data is written/read on
-///
-/// Smaller blocks mean more metadata per object, since object needs more blocks to be stored
-///
-/// Bigger blocks mean more zero padding to fill the entire block
-const BLOCK_SIZE: u64 = 20;
-
-/// Available space in each block to hold content (currently there is 1 byte of metadata per block)
-const CONTENT_SIZE: u64 = BLOCK_SIZE - 1;
-
-/// Block's starting byte, determines how to interpret it
-#[derive(PartialEq, Copy, Clone)]
-enum Metadata {
-    Empty = 0,
-    Start,
-    Continuation,
-}
-
-impl Metadata {
-    fn as_char(self) -> char {
-        (self as u8).into()
-    }
-}
 
 /// Abstracts typed database binded to a specific file
 ///
 /// Specified type will be (de)serialized from/to the file
 ///
-/// If the type changes to have different field types, if fields are renamed or if more fields are added (de)serialization may be broken, please keep the type unchanged or migrate the database
+/// If the type changes to have different field order, field types or if more fields are added (de)serialization may be broken, please keep the type unchanged or migrate the database
 ///
 /// Free blocks in the middle of the file will be cached and prefered, but no data is fragmented over them
 ///
@@ -59,7 +37,6 @@ impl Metadata {
 /// #         maybe_number: Some(random()).filter(|_| random()),
 /// #     }
 /// # }
-///
 /// # fn main() -> Result<(), cabide::Error> {
 /// // Opens file pre-filling it, creates it since it's first run
 /// # std::fs::File::create("test.file")?;
@@ -67,7 +44,8 @@ impl Metadata {
 /// assert_eq!(cbd.blocks()?, 1000);
 ///
 /// // Since this data only uses one block it writes continuously from last block
-/// for i in (0..100).step_by(2) {
+/// for i in 0..100 {
+///     // In this case each object only uses one block
 ///     assert_eq!(cbd.write(&random_data())?, i);
 /// }
 ///
@@ -229,6 +207,7 @@ impl<T: DeserializeOwned> Cabide<T> {
                     return Err(Error::EmptyBlock);
                 } else {
                     // If first block is in the middle of an object (continuation) we error
+                    debug_assert_eq!(metadata[0], Metadata::Continuation as u8);
                     return Err(Error::ContinuationBlock);
                 }
             } else if metadata[0] != expected_metadata as u8 {
@@ -250,6 +229,10 @@ impl<T: DeserializeOwned> Cabide<T> {
 
             Read::by_ref(&mut self.file).take(CONTENT_SIZE).read_to_end(&mut content)?;
 
+            // We must seek the last byte, which may be a END_BLOCK or a padding byte
+            self.file.seek(SeekFrom::Current(1))?;
+            
+
             // Makes sure we stop reading if object changes
             expected_metadata = Metadata::Continuation;
         }
@@ -266,8 +249,14 @@ impl<T: DeserializeOwned> Cabide<T> {
             content.truncate(content.len() - 1);
         }
 
-        let cursor = Cursor::new(String::from_utf8(content)?);
-        let obj = from_reader(cursor)?;
+        // All blocks have a END_BYTE before the (optional) padding, so we remove it if it was read
+        // because of the padding
+        if content.last() == Some(&END_BYTE) {
+            content.truncate(content.len() - 1);
+        }
+
+        let cursor = Cursor::new(content);
+        let obj = deserialize_from(cursor)?;
         Ok(obj)
     }
 
@@ -350,10 +339,9 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// #         classes,
     /// #     }
     /// # }
-    ///
-    /// // Opens file pre-filling it, creates it since it's first run
     /// # fn main() -> Result<(), cabide::Error> {
     /// # std::fs::File::create("test5.file")?;
+    /// // Opens file pre-filling it, creates it since it's first run
     /// let mut cbd: Cabide<Student> = Cabide::new("test5.file", Some(1000))?;
     /// assert_eq!(cbd.blocks()?, 1000);
     ///
@@ -363,10 +351,12 @@ impl<T: DeserializeOwned> Cabide<T> {
     ///     classes: vec![3],
     /// })?;
     ///
+    /// /*
     /// // Writes continuously from last block
     /// for i in 0..20 {
     ///     cbd.write(&random_student(vec![1023, 8, 13]))?;
     /// }
+    /// */
     ///
     /// let student = cbd.first(|student| student.dre == 10101010).unwrap();
     /// assert_eq!(&student.name, "Mr Legit Student");
@@ -414,10 +404,9 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// #         classes,
     /// #     }
     /// # }
-    ///
-    /// // Opens file pre-filling it, creates it since it's first run
     /// # fn main() -> Result<(), cabide::Error> {
     /// # std::fs::File::create("test6.file")?;
+    /// // Opens file pre-filling it, creates it since it's first run
     /// let mut cbd: Cabide<Student> = Cabide::new("test6.file", Some(1000))?;
     /// cbd.write(&Student {
     ///     name: "Mr Legit Student".to_owned(),
@@ -482,7 +471,7 @@ impl<T: Serialize> Cabide<T> {
     /// # }
     /// ```
     pub fn write(&mut self, obj: &T) -> Result<u64, Error> {
-        let raw = to_string(obj)?.into_bytes();
+        let raw = serialize(obj)?;
         let blocks_needed = raw.len() / (CONTENT_SIZE as usize);
 
         let (mut starting_block, mut remaining_blocks, mut delete_block) = (None, None, None);
@@ -491,18 +480,14 @@ impl<T: Serialize> Cabide<T> {
             if *blocks * (CONTENT_SIZE as usize) >= raw.len() {
                 starting_block = block_vec.pop();
 
-                // We return the blocks we don't need to the empty_blocks list
-                if blocks_needed < *blocks {
-                    let index = starting_block.expect("This is a bug, Cabide::write should have cleaned the empty block_vec when used it all") as usize;
+                if let Some(starting_block) = starting_block {
+                    let index = starting_block as usize;
                     remaining_blocks = Some((*blocks - blocks_needed, index + blocks_needed));
-                }
-
-                // We need to handle mepty leafs
-                if block_vec.is_empty() {
+                    break;
+                } else if delete_block.is_none() {
+                    // We need to handle empty leafs, but we only handle one at a time
                     delete_block = Some(*blocks);
                 }
-
-                break;
             }
         }
 
@@ -538,6 +523,7 @@ impl<T: Serialize> Cabide<T> {
         for buff in raw.chunks(CONTENT_SIZE as usize) {
             written += self.file.write(&[metadata as u8])?;
             written += self.file.write(buff)?;
+            written += self.file.write(&[END_BYTE])?;
             metadata = Metadata::Continuation;
             blocks += 1;
         }
