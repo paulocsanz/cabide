@@ -2,13 +2,10 @@ mod error;
 
 pub use crate::error::Error;
 
-use bincode::{serialize, deserialize_from};
+use serde_json::{to_string, from_reader};
 use serde::{de::DeserializeOwned, Serialize};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions, marker::PhantomData, path::Path};
-
-/// Each block has ending byte to identify when data ends (and where the zero padding starts)
-const END_BLOCK: u8 = 8;
 
 /// Size of blocks data is written/read on
 ///
@@ -17,9 +14,10 @@ const END_BLOCK: u8 = 8;
 /// Bigger blocks mean more zero padding to fill the entire block
 const BLOCK_SIZE: u64 = 20;
 
-/// Available space in each block to hold content (currently there are 2 bytes of padding per block)
-const CONTENT_SIZE: u64 = BLOCK_SIZE - 2;
+/// Available space in each block to hold content (currently there is 1 byte of metadata per block)
+const CONTENT_SIZE: u64 = BLOCK_SIZE - 1;
 
+/// Block's starting byte, determines how to interpret it
 #[derive(PartialEq, Copy, Clone)]
 enum Metadata {
     Empty = 0,
@@ -35,9 +33,9 @@ impl Metadata {
 
 /// Abstracts typed database binded to a specific file
 ///
-/// Specified type (order is important) will be (de)serialized from/to the file
+/// Specified type will be (de)serialized from/to the file
 ///
-/// If the type changes, either with a different field definition order, different field types or if more fields are added (de)serialization will be broken, please keep the type unchanged or migrate the database
+/// If the type changes to have different field types, if fields are renamed or if more fields are added (de)serialization may be broken, please keep the type unchanged or migrate the database
 ///
 /// Free blocks in the middle of the file will be cached and prefered, but no data is fragmented over them
 ///
@@ -69,7 +67,7 @@ impl Metadata {
 /// assert_eq!(cbd.blocks()?, 1000);
 ///
 /// // Since this data only uses one block it writes continuously from last block
-/// for i in 0..100 {
+/// for i in (0..100).step_by(2) {
 ///     assert_eq!(cbd.write(&random_data())?, i);
 /// }
 ///
@@ -87,7 +85,7 @@ pub struct Cabide<T> {
     // File which typed database is binded to
     file: File,
     // Caches number of next empty block
-    next_block: Option<u64>,
+    next_block: u64,
     // (number of continuous empty blocks -> list of "starting block"s)
     empty_blocks: BTreeMap<usize, Vec<u64>>,
     // Marks that database must contain a single type
@@ -107,6 +105,7 @@ impl<T> Cabide<T> {
     ///
     /// // Opens file without pre-filling it, creates it since it's first run
     /// # fn main() -> Result<(), cabide::Error> {
+    /// # std::fs::File::create("test2.file")?;
     /// let mut cbd: Cabide<u8> = Cabide::new("test2.file", None)?;
     /// assert_eq!(cbd.blocks()?, 0);
     ///
@@ -127,21 +126,21 @@ impl<T> Cabide<T> {
             .create(true)
             .read(true)
             .open(filename)?;
-        let (mut next_block, mut empty_blocks) = (None, BTreeMap::default());
+        let (mut next_block, mut empty_blocks) = (0, BTreeMap::default());
 
         let current_length = file.metadata()?.len();
         // If file already has data we need to parse it to generate an up-to-date Cabide
         if current_length > 0 {
-            next_block = Some(((current_length as f64) / (BLOCK_SIZE as f64)).ceil() as u64);
+            next_block = ((current_length as f64) / (BLOCK_SIZE as f64)).ceil() as u64;
 
             // If less pre-filled blocks than currently exist are asked for we ignore them
-            blocks = blocks.filter(|blocks| next_block.map_or(0, |b| b - 1) < *blocks);
+            blocks = blocks.filter(|blocks| next_block.saturating_sub(1) < *blocks);
 
             // Holds empty blocks chain
             let mut empty_block = None;
 
             // We need to find the empty blocks in the middle of the file
-            for curr_block in 0..next_block.unwrap_or(0) {
+            for curr_block in 0..next_block {
                 let mut metadata: [u8; 1] = [0];
 
                 file.seek(SeekFrom::Start(curr_block * BLOCK_SIZE))?;
@@ -192,6 +191,7 @@ impl<T> Cabide<T> {
     ///
     /// // Opens file without pre-filling it, creates it since it's first run
     /// # fn main() -> Result<(), cabide::Error> {
+    /// # std::fs::File::create("test10.file")?;
     /// let mut cbd: Cabide<u8> = Cabide::new("test10.file", Some(1000))?;
     /// assert_eq!(cbd.blocks()?, 1000);
     /// # std::fs::remove_file("test10.file")?;
@@ -248,10 +248,7 @@ impl<T: DeserializeOwned> Cabide<T> {
                 self.file.write(&[Metadata::Empty as u8])?;
             }
 
-            Read::by_ref(&mut self.file).take(CONTENT_SIZE).read(&mut content)?;
-
-            // Every block ends with END_BLOCK, so we can skip it
-            self.file.seek(SeekFrom::Current(1))?;
+            Read::by_ref(&mut self.file).take(CONTENT_SIZE).read_to_end(&mut content)?;
 
             // Makes sure we stop reading if object changes
             expected_metadata = Metadata::Continuation;
@@ -269,13 +266,8 @@ impl<T: DeserializeOwned> Cabide<T> {
             content.truncate(content.len() - 1);
         }
 
-        // Skips END_BLOCK if it was read
-        if content.last() == Some(&END_BLOCK) {
-            content.truncate(content.len() - 1);
-        }
-
-        let cursor = Cursor::new(content);
-        let obj = deserialize_from(cursor)?;
+        let cursor = Cursor::new(String::from_utf8(content)?);
+        let obj = from_reader(cursor)?;
         Ok(obj)
     }
 
@@ -285,6 +277,7 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// use cabide::Cabide;
     ///
     /// # fn main() -> Result<(), cabide::Error> {
+    /// # std::fs::File::create("test3.file")?;
     /// // Opens file pre-filling it, creates it since it's first run
     /// let mut cbd: Cabide<u8> = Cabide::new("test3.file", None)?;
     ///
@@ -314,6 +307,7 @@ impl<T: DeserializeOwned> Cabide<T> {
     ///
     /// // Opens file pre-filling it, creates it since it's first run
     /// # fn main() -> Result<(), cabide::Error> {
+    /// # std::fs::File::create("test4.file")?;
     /// let mut cbd: Cabide<u8> = Cabide::new("test4.file", None)?;
     ///
     /// for i in 0..100 {
@@ -359,6 +353,7 @@ impl<T: DeserializeOwned> Cabide<T> {
     ///
     /// // Opens file pre-filling it, creates it since it's first run
     /// # fn main() -> Result<(), cabide::Error> {
+    /// # std::fs::File::create("test5.file")?;
     /// let mut cbd: Cabide<Student> = Cabide::new("test5.file", Some(1000))?;
     /// assert_eq!(cbd.blocks()?, 1000);
     ///
@@ -422,6 +417,7 @@ impl<T: DeserializeOwned> Cabide<T> {
     ///
     /// // Opens file pre-filling it, creates it since it's first run
     /// # fn main() -> Result<(), cabide::Error> {
+    /// # std::fs::File::create("test6.file")?;
     /// let mut cbd: Cabide<Student> = Cabide::new("test6.file", Some(1000))?;
     /// cbd.write(&Student {
     ///     name: "Mr Legit Student".to_owned(),
@@ -486,10 +482,10 @@ impl<T: Serialize> Cabide<T> {
     /// # }
     /// ```
     pub fn write(&mut self, obj: &T) -> Result<u64, Error> {
-        let raw = serialize(obj)?;
+        let raw = to_string(obj)?.into_bytes();
         let blocks_needed = raw.len() / (CONTENT_SIZE as usize);
 
-        let (mut starting_block, mut remaining_blocks) = (None, None);
+        let (mut starting_block, mut remaining_blocks, mut delete_block) = (None, None, None);
         // First we check if there are empty blocks with the needed size
         for (blocks, block_vec) in &mut self.empty_blocks {
             if *blocks * (CONTENT_SIZE as usize) >= raw.len() {
@@ -497,12 +493,22 @@ impl<T: Serialize> Cabide<T> {
 
                 // We return the blocks we don't need to the empty_blocks list
                 if blocks_needed < *blocks {
-                    let index = starting_block.unwrap() as usize;
+                    let index = starting_block.expect("This is a bug, Cabide::write should have cleaned the empty block_vec when used it all") as usize;
                     remaining_blocks = Some((*blocks - blocks_needed, index + blocks_needed));
+                }
+
+                // We need to handle mepty leafs
+                if block_vec.is_empty() {
+                    delete_block = Some(*blocks);
                 }
 
                 break;
             }
+        }
+
+        // If BTreeMap leaf's has no starting block we remove it
+        if let Some(blocks) = delete_block {
+            self.empty_blocks.remove(&blocks);
         }
 
         // Returns unused free blocks from the extracted chain to the empty_blocks list
@@ -518,13 +524,9 @@ impl<T: Serialize> Cabide<T> {
         } else {
             // If there wasn't any fragmented empty block we take the next available one
             // We need to update self.next_block taking into account how many bytes we are writing
-            let block = self.next_block.unwrap_or(0);
+            let block = self.next_block;
             let offset = ((raw.len() as f64) / (CONTENT_SIZE as f64)).ceil() as u64;
-            if let Some(block) = &mut self.next_block {
-                *block += offset;
-            } else {
-                self.next_block = Some(offset);
-            }
+            self.next_block += offset;
             block
         };
 
@@ -533,11 +535,9 @@ impl<T: Serialize> Cabide<T> {
 
         let (mut written, mut blocks, mut metadata) = (0, 0, Metadata::Start);
         // Split encoded data in chunks, appending the metadata to each block before writing the chunks
-        // (and each END_BLOCK)
-        for buff in raw.chunks((BLOCK_SIZE as usize) - 2) {
+        for buff in raw.chunks(CONTENT_SIZE as usize) {
             written += self.file.write(&[metadata as u8])?;
             written += self.file.write(buff)?;
-            written += self.file.write(&[END_BLOCK])?;
             metadata = Metadata::Continuation;
             blocks += 1;
         }
@@ -589,6 +589,7 @@ mod tests {
 
     #[test]
     fn persistance() {
+        std::fs::File::create("cabide.test").unwrap();
         let mut cbd: Cabide<Data> = Cabide::new("cabide.test", None).unwrap();
         cbd.file.set_len(0).unwrap();
 
