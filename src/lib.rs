@@ -26,10 +26,10 @@
 //! let mut cbd: Cabide<Data> = Cabide::new("test.file", Some(1000))?;
 //! assert_eq!(cbd.blocks()?, 1000);
 //!
-//! // Since this data only uses one block it writes continuously from last block
+//! // Since random_data only returns a data that fits in one block it writes continuously from last block
 //! for i in 0..100 {
-//!     let data = random_data();
 //!     // In this case each object only uses one block
+//!     let data = random_data();
 //!     assert_eq!(cbd.write(&data)?, i);
 //!     assert_eq!(cbd.read(i)?, data);
 //! }
@@ -91,10 +91,9 @@ use std::{collections::BTreeMap, fs::File, fs::OpenOptions, marker::PhantomData,
 /// let mut cbd: Cabide<Data> = Cabide::new("test.file", Some(1000))?;
 /// assert_eq!(cbd.blocks()?, 1000);
 ///
-/// // Since this data only uses one block it writes continuously from last block
+/// // Since random_data only returns a data that fits in one block it writes continuously from last block
 /// for i in 0..100 {
 ///     let data = random_data();
-///     // In this case each object only uses one block
 ///     assert_eq!(cbd.write(&data)?, i);
 ///     assert_eq!(cbd.read(i)?, data);
 /// }
@@ -325,7 +324,6 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// // Opens database, creates it since it's first run
     /// let mut cbd: Cabide<u8> = Cabide::new("test3.file", None)?;
     ///
-    /// // Writes continuously from last block
     /// for i in 0..100 {
     ///     cbd.write(&i)?;
     /// }
@@ -512,7 +510,6 @@ impl<T: Serialize> Cabide<T> {
     /// # std::fs::File::create("test7.file")?;
     /// let mut cbd: Cabide<u8> = Cabide::new("test7.file", None)?;
     ///
-    /// // Writes continuously from last block
     /// for i in 0..1000 {
     ///     assert_eq!(cbd.write(&rand::random())?, i);
     /// }

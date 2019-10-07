@@ -1,0 +1,42 @@
+# Cabide
+
+**Typed file based database**
+
+Specified type will be (de)serialized from/to the file
+
+If the type changes to have different field order, field types or if more fields are added deserialization may be broken,
+please keep the type unchanged or migrate the database first
+
+Free blocks in the middle of the file will be cached and prefered, but no data is fragmented over them
+
+## Example
+
+```rust
+use serde::{Serialize, Deserialize};
+use cabide::Cabide;
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+struct Data {
+    name: String,
+    maybe_number: Option<u8>,
+}
+
+// Opens file pre-filling it, creates it since it's first run
+let mut cbd: Cabide<Data> = Cabide::new("test.file", Some(1000))?;
+assert_eq!(cbd.blocks()?, 1000);
+
+// Since random_data only returns a data that fits in one block it writes continuously from last block
+for i in 0..100 {
+    let data = random_data();
+    assert_eq!(cbd.write(&data)?, i);
+    assert_eq!(cbd.read(i)?, data);
+}
+
+cbd.remove(40)?;
+cbd.remove(30)?;
+cbd.remove(35)?;
+
+// Since there are empty blocks in the middle of the file we re-use one of them
+// (the last one to be available that fits the data)
+assert_eq!(cbd.write(&random_data())?, 35);
+```
