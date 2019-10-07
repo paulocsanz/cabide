@@ -1,3 +1,51 @@
+//! Typed file based database
+//!
+//! ```rust
+//! use serde::{Serialize, Deserialize};
+//! use cabide::Cabide;
+//!
+//! #[derive(Debug, Serialize, Deserialize, PartialEq)]
+//! struct Data {
+//!     name: String,
+//!     maybe_number: Option<u8>,
+//! }
+//!
+//! # use rand::{distributions::*, random, thread_rng};
+//! # fn random_data() -> Data {
+//! #     // this is slow af since it doesn't cache thread_rng
+//! #     Data {
+//! #         name: (0..5)
+//! #             .map(|_| Alphanumeric.sample(&mut thread_rng()))
+//! #             .collect(),
+//! #         maybe_number: Some(random()).filter(|_| random()),
+//! #     }
+//! # }
+//! # fn main() -> Result<(), cabide::Error> {
+//! // Opens file pre-filling it, creates it since it's first run
+//! # std::fs::File::create("test.file")?;
+//! let mut cbd: Cabide<Data> = Cabide::new("test.file", Some(1000))?;
+//! assert_eq!(cbd.blocks()?, 1000);
+//!
+//! // Since this data only uses one block it writes continuously from last block
+//! for i in 0..100 {
+//!     let data = random_data();
+//!     // In this case each object only uses one block
+//!     assert_eq!(cbd.write(&data)?, i);
+//!     assert_eq!(cbd.read(i)?, data);
+//! }
+//!
+//! cbd.remove(40)?;
+//! cbd.remove(30)?;
+//! cbd.remove(35)?;
+//!
+//! // Since there are empty blocks in the middle of the file we re-use one of them
+//! // (the last one to be available that fits the data)
+//! assert_eq!(cbd.write(&random_data())?, 35);
+//! # std::fs::remove_file("test.file")?;
+//! # Ok(())
+//! # }
+//! ```
+
 mod error;
 mod protocol;
 
@@ -13,7 +61,7 @@ use std::{collections::BTreeMap, fs::File, fs::OpenOptions, marker::PhantomData,
 ///
 /// Specified type will be (de)serialized from/to the file
 ///
-/// If the type changes to have different field order, field types or if more fields are added (de)serialization may be broken, please keep the type unchanged or migrate the database
+/// If the type changes to have different field order, field types or if more fields are added deserialization may be broken, please keep the type unchanged or migrate the database first
 ///
 /// Free blocks in the middle of the file will be cached and prefered, but no data is fragmented over them
 ///
@@ -21,7 +69,7 @@ use std::{collections::BTreeMap, fs::File, fs::OpenOptions, marker::PhantomData,
 /// use serde::{Serialize, Deserialize};
 /// use cabide::Cabide;
 ///
-/// #[derive(Debug, Serialize, Deserialize)]
+/// #[derive(Debug, Serialize, Deserialize, PartialEq)]
 /// struct Data {
 ///     name: String,
 ///     maybe_number: Option<u8>,
@@ -45,33 +93,37 @@ use std::{collections::BTreeMap, fs::File, fs::OpenOptions, marker::PhantomData,
 ///
 /// // Since this data only uses one block it writes continuously from last block
 /// for i in 0..100 {
+///     let data = random_data();
 ///     // In this case each object only uses one block
-///     assert_eq!(cbd.write(&random_data())?, i);
+///     assert_eq!(cbd.write(&data)?, i);
+///     assert_eq!(cbd.read(i)?, data);
 /// }
 ///
 /// cbd.remove(40)?;
 /// cbd.remove(30)?;
+/// cbd.remove(35)?;
 ///
 /// // Since there are empty blocks in the middle of the file we re-use one of them
-/// assert_eq!(cbd.write(&random_data())?, 30);
+/// // (the last one to be available that fits the data)
+/// assert_eq!(cbd.write(&random_data())?, 35);
 /// # std::fs::remove_file("test.file")?;
 /// # Ok(())
 /// # }
 /// ```
 #[derive(Debug)]
 pub struct Cabide<T> {
-    // File which typed database is binded to
+    /// File which typed database is binded to
     file: File,
-    // Caches number of next empty block
+    /// Caches number of next empty block
     next_block: u64,
-    // (number of continuous empty blocks -> list of "starting block"s)
+    /// (number of continuous empty blocks -> list of "starting block"s)
     empty_blocks: BTreeMap<usize, Vec<u64>>,
-    // Marks that database must contain a single type
+    /// Marks that database must contain a single type
     _marker: PhantomData<T>,
 }
 
 impl<T> Cabide<T> {
-    /// Binds database to specified file, creating it if non existant
+    /// Binds database to specified file, creating it if non existent
     ///
     /// Pads file to have specified number of blocks, pre-filling it
     ///
@@ -98,7 +150,10 @@ impl<T> Cabide<T> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn new(filename: impl AsRef<Path>, mut blocks: Option<u64>) -> Result<Self, Error> {
+    pub fn new<P>(filename: P, mut blocks: Option<u64>) -> Result<Self, Error>
+    where
+        P: AsRef<Path>
+    {
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
@@ -119,7 +174,7 @@ impl<T> Cabide<T> {
 
             // We need to find the empty blocks in the middle of the file
             for curr_block in 0..next_block {
-                let mut metadata: [u8; 1] = [0];
+                let mut metadata = [0];
 
                 file.seek(SeekFrom::Start(curr_block * BLOCK_SIZE))?;
                 if Read::by_ref(&mut file).take(1).read(&mut metadata)? == 0 {
@@ -200,7 +255,7 @@ impl<T: DeserializeOwned> Cabide<T> {
                 break;
             }
 
-            if content.len() == 0 && metadata[0] != expected_metadata as u8 {
+            if content.is_empty() && metadata[0] != expected_metadata as u8 {
                 // If its the first block and the metadata mismatch
                 if metadata[0] == Metadata::Empty as u8 {
                     // If first block is empty we error
@@ -224,7 +279,7 @@ impl<T: DeserializeOwned> Cabide<T> {
                 }
 
                 self.file.seek(SeekFrom::Current(-1))?;
-                self.file.write(&[Metadata::Empty as u8])?;
+                self.file.write_all(&[Metadata::Empty as u8])?;
             }
 
             Read::by_ref(&mut self.file).take(CONTENT_SIZE).read_to_end(&mut content)?;
@@ -256,18 +311,18 @@ impl<T: DeserializeOwned> Cabide<T> {
         }
 
         let cursor = Cursor::new(content);
-        let obj = deserialize_from(cursor)?;
+        let obj = deserialize_from(cursor).map_err(|_| Error::CorruptedBlock)?;
         Ok(obj)
     }
 
-    /// Empties specified starting block (and its continuations) returning its content
+    /// Mark object blocks as empty, cacheing them, returns removed content
     ///
     /// ```rust
     /// use cabide::Cabide;
     ///
     /// # fn main() -> Result<(), cabide::Error> {
     /// # std::fs::File::create("test3.file")?;
-    /// // Opens file pre-filling it, creates it since it's first run
+    /// // Opens database, creates it since it's first run
     /// let mut cbd: Cabide<u8> = Cabide::new("test3.file", None)?;
     ///
     /// // Writes continuously from last block
@@ -289,7 +344,7 @@ impl<T: DeserializeOwned> Cabide<T> {
         self.read_update_metadata(block, true)
     }
 
-    /// Reads type from specified starting block (and its continuations)
+    /// Returns object deserialized from specified starting block (and its continuations)
     ///
     /// ```rust
     /// use cabide::Cabide;
@@ -315,7 +370,7 @@ impl<T: DeserializeOwned> Cabide<T> {
 
     /// Returns first element to be selected by the `filter` function
     ///
-    /// Works in O(n), testing each block
+    /// Works in O(n), testing each block until the first is found
     ///
     /// ```rust
     /// use serde::{Serialize, Deserialize};
@@ -331,12 +386,16 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// # use rand::{distributions::*, random, thread_rng};
     /// # fn random_student(classes: Vec<u16>) -> Student {
     /// #     // this is slow af since it doesn't cache thread_rng
+    /// #     let mut dre = random();
+    /// #     while dre == 10101010 {
+    /// #         dre = random();
+    /// #     }
     /// #     Student {
     /// #         name: (0..7)
     /// #             .map(|_| Alphanumeric.sample(&mut thread_rng()))
     /// #             .collect(),
-    /// #         dre: random(),
-    /// #         classes,
+    /// #         dre,
+    /// #         classes: classes.clone(),
     /// #     }
     /// # }
     /// # fn main() -> Result<(), cabide::Error> {
@@ -345,18 +404,15 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// let mut cbd: Cabide<Student> = Cabide::new("test5.file", Some(1000))?;
     /// assert_eq!(cbd.blocks()?, 1000);
     ///
+    /// for i in 0..20 {
+    ///     cbd.write(&random_student(vec![1023, random(), random()]))?;
+    /// }
+    ///
     /// cbd.write(&Student {
     ///     name: "Mr Legit Student".to_owned(),
     ///     dre: 10101010,
     ///     classes: vec![3],
     /// })?;
-    ///
-    /// /*
-    /// // Writes continuously from last block
-    /// for i in 0..20 {
-    ///     cbd.write(&random_student(vec![1023, 8, 13]))?;
-    /// }
-    /// */
     ///
     /// let student = cbd.first(|student| student.dre == 10101010).unwrap();
     /// assert_eq!(&student.name, "Mr Legit Student");
@@ -408,15 +464,15 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// # std::fs::File::create("test6.file")?;
     /// // Opens file pre-filling it, creates it since it's first run
     /// let mut cbd: Cabide<Student> = Cabide::new("test6.file", Some(1000))?;
+    ///
     /// cbd.write(&Student {
     ///     name: "Mr Legit Student".to_owned(),
     ///     dre: 10101010,
     ///     classes: vec![3],
     /// })?;
     ///
-    /// // Writes continuously from last block
     /// for i in 0..20 {
-    ///     cbd.write(&random_student(vec![1023, 8, 13]))?;
+    ///     cbd.write(&random_student(vec![1023, random(), random()]))?;
     /// }
     ///
     /// let students = cbd.filter(|student| student.classes.contains(&1023));
@@ -445,7 +501,7 @@ impl<T: DeserializeOwned> Cabide<T> {
 }
 
 impl<T: Serialize> Cabide<T> {
-    /// Writes encoded type to database, splitting data in multiple blocks
+    /// Writes data to database, splitting data in multiple blocks if needed
     ///
     /// Re-uses removed blocks, doesn't fragment data
     ///
@@ -465,13 +521,14 @@ impl<T: Serialize> Cabide<T> {
     /// cbd.remove(58)?;
     ///
     /// // Since there are empty blocks in the middle of the file we re-use one of them
+    /// // (the last one to be available that fits the data)
     /// assert_eq!(cbd.write(&rand::random())?, 58);
     /// # std::fs::remove_file("test7.file")?;
     /// # Ok(())
     /// # }
     /// ```
     pub fn write(&mut self, obj: &T) -> Result<u64, Error> {
-        let raw = serialize(obj)?;
+        let raw = serialize(obj).map_err(|_| Error::CorruptedBlock)?;
         let blocks_needed = raw.len() / (CONTENT_SIZE as usize);
 
         let (mut starting_block, mut remaining_blocks, mut delete_block) = (None, None, None);
@@ -510,8 +567,7 @@ impl<T: Serialize> Cabide<T> {
             // If there wasn't any fragmented empty block we take the next available one
             // We need to update self.next_block taking into account how many bytes we are writing
             let block = self.next_block;
-            let offset = ((raw.len() as f64) / (CONTENT_SIZE as f64)).ceil() as u64;
-            self.next_block += offset;
+            self.next_block += ((raw.len() as f64) / (CONTENT_SIZE as f64)).ceil() as u64;
             block
         };
 
@@ -533,7 +589,7 @@ impl<T: Serialize> Cabide<T> {
             .as_char()
             .to_string()
             .repeat((blocks * BLOCK_SIZE) as usize - written);
-        self.file.write(null_byte.as_bytes())?;
+        self.file.write_all(null_byte.as_bytes())?;
         Ok(starting_block)
     }
 }
