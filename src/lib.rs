@@ -52,9 +52,9 @@ mod protocol;
 pub use crate::error::Error;
 use crate::protocol::{END_BYTE, BLOCK_SIZE, CONTENT_SIZE, Metadata};
 
-use bincode::{serialize, deserialize_from};
-use serde::{de::DeserializeOwned, Serialize};
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use bincode::{serialize, deserialize};
+use serde::{Deserialize, Serialize};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions, marker::PhantomData, path::Path};
 
 /// Abstracts typed database binded to a specific file
@@ -230,12 +230,17 @@ impl<T> Cabide<T> {
     /// # Ok(())
     /// # }
     /// ```
+    #[inline]
     pub fn blocks(&self) -> Result<u64, Error> {
         Ok(((self.file.metadata()?.len() as f64) / (BLOCK_SIZE as f64)).ceil() as u64)
     }
 }
 
-impl<T: DeserializeOwned> Cabide<T> {
+impl<T> Cabide<T>
+where
+    for<'de> T: Deserialize<'de>,
+{
+    #[inline(always)]
     fn read_update_metadata(
         &mut self,
         block: u64,
@@ -309,8 +314,7 @@ impl<T: DeserializeOwned> Cabide<T> {
             content.truncate(content.len() - 1);
         }
 
-        let cursor = Cursor::new(content);
-        let obj = deserialize_from(cursor).map_err(|_| Error::CorruptedBlock)?;
+        let obj = deserialize(&content).map_err(|_| Error::CorruptedBlock)?;
         Ok(obj)
     }
 
@@ -418,6 +422,7 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// # Ok(())
     /// # }
     /// ```
+    #[inline]
     pub fn first(&mut self, filter: impl Fn(&T) -> bool) -> Option<T> {
         for block in 0..self.blocks().unwrap_or(0) {
             match self.read(block) {
@@ -479,6 +484,7 @@ impl<T: DeserializeOwned> Cabide<T> {
     /// # Ok(())
     /// # }
     /// ```
+    #[inline]
     pub fn filter(&mut self, filter: impl Fn(&T) -> bool) -> Vec<T> {
         let mut vec = vec![];
         for block in 0..self.blocks().unwrap_or(0) {

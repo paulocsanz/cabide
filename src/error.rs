@@ -14,12 +14,14 @@ pub enum Error {
 }
 
 impl From<io::Error> for Error {
+    #[inline(always)]
     fn from(io: io::Error) -> Self {
         Self::Io(io)
     }
 }
 
 impl fmt::Display for Error {
+    #[inline]
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::Io(err) => write!(fmt, "{}", err.to_string()),

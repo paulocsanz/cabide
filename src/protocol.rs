@@ -20,6 +20,7 @@ pub enum Metadata {
 }
 
 impl Metadata {
+    #[inline(always)]
     pub fn as_char(self) -> char {
         (self as u8).into()
     }
