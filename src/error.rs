@@ -1,4 +1,4 @@
-use std::{io, fmt};
+use std::{fmt, io};
 
 /// Enumerates all errors possible in this crate
 #[derive(Debug)]
@@ -10,7 +10,9 @@ pub enum Error {
     /// Happens if you try to read from a block that is in the middle of an object
     ContinuationBlock,
     /// Happens if you try to read from a empty block
-    EmptyBlock
+    EmptyBlock,
+    /// Happens if you try to read from a non-existing block or file
+    NotExistant,
 }
 
 impl From<io::Error> for Error {
@@ -25,9 +27,13 @@ impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::Io(err) => write!(fmt, "{}", err.to_string()),
-            Error::CorruptedBlock => write!(fmt, "Unable to deserialize a block, file is corrupted or type is wrong"),
+            Error::CorruptedBlock => write!(
+                fmt,
+                "Unable to deserialize a block, file is corrupted or type is wrong"
+            ),
             Error::ContinuationBlock => write!(fmt, "Continuation Block"),
             Error::EmptyBlock => write!(fmt, "Empty Block"),
+            Error::NotExistant => write!(fmt, "Block/file doesn't exist"),
         }
     }
 }

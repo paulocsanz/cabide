@@ -47,12 +47,14 @@
 //! ```
 
 mod error;
+mod hash;
 mod protocol;
 
 pub use crate::error::Error;
-use crate::protocol::{END_BYTE, BLOCK_SIZE, CONTENT_SIZE, Metadata};
+pub use crate::hash::HashCabide;
+use crate::protocol::{Metadata, BLOCK_SIZE, CONTENT_SIZE, END_BYTE};
 
-use bincode::{serialize, deserialize};
+use bincode::{deserialize, serialize};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions, marker::PhantomData, path::Path};
@@ -151,7 +153,7 @@ impl<T> Cabide<T> {
     /// ```
     pub fn new<P>(filename: P, mut blocks: Option<u64>) -> Result<Self, Error>
     where
-        P: AsRef<Path>
+        P: AsRef<Path>,
     {
         let mut file = OpenOptions::new()
             .write(true)
@@ -213,7 +215,7 @@ impl<T> Cabide<T> {
             file,
             next_block,
             empty_blocks,
-            _marker: PhantomData
+            _marker: PhantomData,
         })
     }
 
@@ -241,11 +243,7 @@ where
     for<'de> T: Deserialize<'de>,
 {
     #[inline(always)]
-    fn read_update_metadata(
-        &mut self,
-        block: u64,
-        empty_read_blocks: bool,
-    ) -> Result<T, Error> {
+    fn read_update_metadata(&mut self, block: u64, empty_read_blocks: bool) -> Result<T, Error> {
         let mut content = vec![];
         let mut empty_block = None;
         self.file.seek(SeekFrom::Start(block * BLOCK_SIZE))?;
@@ -286,11 +284,12 @@ where
                 self.file.write_all(&[Metadata::Empty as u8])?;
             }
 
-            Read::by_ref(&mut self.file).take(CONTENT_SIZE).read_to_end(&mut content)?;
+            Read::by_ref(&mut self.file)
+                .take(CONTENT_SIZE)
+                .read_to_end(&mut content)?;
 
             // We must seek the last byte, which may be a END_BLOCK or a padding byte
             self.file.seek(SeekFrom::Current(1))?;
-            
 
             // Makes sure we stop reading if object changes
             expected_metadata = Metadata::Continuation;
