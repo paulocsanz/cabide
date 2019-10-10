@@ -9,12 +9,23 @@ pub struct HashCabide<T> {
 }
 
 impl<T> HashCabide<T> {
-    pub fn new(folder: impl Into<PathBuf>, hash_function: Box<dyn Fn(&T) -> u8>) -> Self {
-        Self {
-            folder: folder.into(),
-            cabides: HashMap::default(),
-            hash_function,
+    pub fn new<P>(folder: P, hash_function: Box<dyn Fn(&T) -> u8>) -> Result<Self, Error>
+    where
+        P: Into<PathBuf>,
+    {
+        let (folder, mut cabides) = (folder.into(), HashMap::default());
+        for value in 0..255 {
+            let path = folder.join(value.to_string());
+            if path.is_file() {
+                cabides.insert(value, Cabide::new(path, None)?);
+            }
         }
+
+        Ok(Self {
+            folder,
+            cabides,
+            hash_function,
+        })
     }
 
     #[inline]
@@ -29,17 +40,17 @@ impl<T> HashCabide<T> {
 
 impl<T: Serialize> HashCabide<T> {
     #[inline]
-    pub fn write(&mut self, obj: &T) -> Result<u64, Error> {
+    pub fn write(&mut self, obj: &T) -> Result<(u8, u64), Error> {
         let hash = (self.hash_function)(obj);
-        let mut written = 0;
-        if let Some(cabide) = self.cabides.get_mut(&hash) {
-            written += cabide.write(obj)?;
+        let block = if let Some(cabide) = self.cabides.get_mut(&hash) {
+            cabide.write(obj)?
         } else {
             let mut cabide = Cabide::new(self.folder.join(hash.to_string()), None)?;
-            written += cabide.write(obj)?;
+            let block = cabide.write(obj)?;
             self.cabides.insert(hash, cabide);
-        }
-        Ok(written)
+            block
+        };
+        Ok((hash, block))
     }
 }
 
