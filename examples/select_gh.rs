@@ -20,8 +20,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(_e) => println!("Found nothing"),
     }
 
+    // TODO op reporting
     println!();
-    println!("used blocks: {}", 1);
+    println!("used blocks: {}", cbd.blocks()?);
     println!("read blocks: {}", 1);
 
     Ok(())
