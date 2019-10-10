@@ -1,6 +1,6 @@
 # Cabide
 
-**Typed file based database**
+**Typed file based database library**
 
 Specified type will be (de)serialized from/to the file
 
@@ -8,6 +8,22 @@ If the type changes to have different field order, field types or if more fields
 please keep the type unchanged or migrate the database first
 
 Free blocks in the middle of the file will be cached and prefered, but no data is fragmented over them
+
+## Dependencies
+
+- Rust compiler (https://rustup.rs/)
+
+## Docs
+
+This is a library that provides access to Cabide and HashCabide, two file based databases each with its API documented with `cargo doc`
+
+`cargo doc --open`
+
+## To run all "tests" from CBD's spec
+
+To modify them change the files in the `examples` folder
+
+`cargo run --examples`
 
 ## Example
 
