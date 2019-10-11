@@ -1,7 +1,7 @@
 use cabide::Cabide;
-use serde::{Deserialize, Serialize};
-use std::sync::atomic::{Ordering};
 use cabide::READ_BLOCKS_COUNT;
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::Ordering;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct Data {

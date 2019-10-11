@@ -241,6 +241,11 @@ impl<T> Cabide<T> {
     pub fn blocks(&self) -> Result<u64, Error> {
         Ok(((self.file.metadata()?.len() as f64) / (BLOCK_SIZE as f64)).ceil() as u64)
     }
+
+    #[inline]
+    pub fn truncate(&self) -> Result<(), Error> {
+        Ok(self.file.set_len(0)?)
+    }
 }
 
 impl<T> Cabide<T>
