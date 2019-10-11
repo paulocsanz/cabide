@@ -507,9 +507,10 @@ where
     pub fn remove_with(&mut self, filter: impl Fn(&T) -> bool) -> Vec<T> {
         let mut vec = vec![];
         for block in 0..self.blocks().unwrap_or(0) {
-            match self.remove(block) {
+            match self.read(block) {
                 Ok(data) => {
                     if filter(&data) {
+                        self.remove(block).unwrap();
                         vec.push(data);
                     }
                 }
