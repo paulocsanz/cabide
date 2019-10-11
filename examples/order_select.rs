@@ -19,11 +19,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "alunos_head_ordered.db",
         "alunos_head_ordered.db.temp",
     );
-    let mut cbd = OrderCabide::new(buffer, ordered, temp, Box::new(extract_nome), Box::new(Ord::cmp))?;
+    let mut cbd = OrderCabide::new(
+        buffer,
+        ordered,
+        temp,
+        Box::new(extract_nome),
+        Box::new(Ord::cmp),
+    )?;
 
     // Edit function passed to filter to change select condition
-    let result = cbd.first(|nome| str::cmp(nome, "Archy Rodway")).unwrap();
-    println!("Found {:?}", result);
+    let results = cbd.filter(|nome| str::cmp(nome, "Archy Rodway")).unwrap();
+    println!("Found {:?}", results);
 
     println!();
     println!("Used blocks: {}", cbd.blocks()?);

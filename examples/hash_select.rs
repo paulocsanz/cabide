@@ -1,4 +1,4 @@
-use cabide::{HashCabide};
+use cabide::HashCabide;
 use cabide::READ_BLOCKS_COUNT;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
