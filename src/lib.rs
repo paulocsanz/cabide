@@ -48,7 +48,7 @@
 
 mod error;
 mod hash;
-mod protocol;
+pub mod protocol;
 
 pub use crate::error::Error;
 pub use crate::hash::HashCabide;
