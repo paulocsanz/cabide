@@ -4,21 +4,29 @@ use std::{cmp::Ordering, fs, path::Path, path::PathBuf};
 
 static BUFFER_MAX_BLOCKS: u64 = 200;
 
-pub struct OrderCabide<T, OrderField> {
+pub struct OrderCabide<T, F, G, OrderField>
+where
+    F: Fn(&T) -> OrderField,
+    G: Fn(&OrderField, &OrderField) -> Ordering,
+{
     unordered_buffer: Cabide<T>,
     main: (Cabide<T>, PathBuf),
     sort_temp: (Cabide<T>, PathBuf),
-    extract_order_field: Box<dyn Fn(&T) -> &OrderField>,
-    order_function: Box<dyn Fn(&OrderField, &OrderField) -> Ordering>,
+    extract_order_field: F,
+    order_function: G,
 }
 
-impl<T, OrderField> OrderCabide<T, OrderField> {
+impl<T, F, G, OrderField> OrderCabide<T, F, G, OrderField>
+where
+    F: Fn(&T) -> OrderField,
+    G: Fn(&OrderField, &OrderField) -> Ordering,
+{
     pub fn new(
         buffer: impl AsRef<Path>,
         main: impl Into<PathBuf>,
         sort_temp: impl Into<PathBuf>,
-        extract_order_field: Box<dyn Fn(&T) -> &OrderField>,
-        order_function: Box<dyn Fn(&OrderField, &OrderField) -> Ordering>,
+        extract_order_field: F,
+        order_function: G,
     ) -> Result<Self, Error> {
         let (main, sort_temp) = (main.into(), sort_temp.into());
         Ok(Self {
@@ -36,9 +44,11 @@ impl<T, OrderField> OrderCabide<T, OrderField> {
     }
 }
 
-impl<T, OrderField> OrderCabide<T, OrderField>
+impl<T, F, G, OrderField> OrderCabide<T, F, G, OrderField>
 where
     for<'de> T: Serialize + Deserialize<'de>,
+    F: Fn(&T) -> OrderField,
+    G: Fn(&OrderField, &OrderField) -> Ordering,
 {
     #[inline]
     pub fn write(&mut self, obj: &T) -> Result<(), Error> {
@@ -50,7 +60,7 @@ where
             main.sort_by(|t1, t2| {
                 let f1 = (self.extract_order_field)(t1);
                 let f2 = (self.extract_order_field)(t2);
-                (self.order_function)(f1, f2)
+                (self.order_function)(&f1, &f2)
             });
 
             self.sort_temp.0.truncate()?;
@@ -71,15 +81,17 @@ enum Going {
     Right,
 }
 
-impl<T, OrderField> OrderCabide<T, OrderField>
+impl<T, F, G, OrderField> OrderCabide<T, F, G, OrderField>
 where
     for<'de> T: Deserialize<'de>,
+    F: Fn(&T) -> OrderField,
+    G: Fn(&OrderField, &OrderField) -> Ordering,
 {
     pub fn first(&mut self, order_by: impl Fn(&OrderField) -> Ordering) -> Option<T> {
         let (unordered_buffer, extract_order_field) =
             (&mut self.unordered_buffer, &self.extract_order_field);
         unordered_buffer
-            .first(|data| order_by((extract_order_field)(data)) == Ordering::Equal)
+            .first(|data| order_by(&(extract_order_field)(data)) == Ordering::Equal)
             .or_else(|| {
                 let blocks = self.main.0.blocks().ok()?;
                 let mut block = blocks / 2;
@@ -88,7 +100,7 @@ where
                 loop {
                     if let Ok(data) = self.main.0.read(block) {
                         has_found_something = true;
-                        match order_by((self.extract_order_field)(&data)) {
+                        match order_by(&(self.extract_order_field)(&data)) {
                             Ordering::Equal => return Some(data),
                             Ordering::Less => {
                                 going = Going::Right;
