@@ -13,6 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut cbd: Cabide<Data> = Cabide::new("select.file", None)?;
 
+    // Change read() arg to desired id
     let result = &cbd.read(0);
 
     match  result {

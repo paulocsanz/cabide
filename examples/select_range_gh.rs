@@ -12,6 +12,7 @@ struct Data {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cbd: Cabide<Data> = Cabide::new("select.file", None)?;
 
+    // Edit this array with start and end ids
     let id_range: [u64; 2] = [0, 3];
 
     for id in id_range[0]..id_range[1] {
