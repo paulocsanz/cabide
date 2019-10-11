@@ -501,6 +501,26 @@ where
         }
         vec
     }
+
+    /// Sorry, docs are still on their way for this
+    #[inline]
+    pub fn remove_with(&mut self, filter: impl Fn(&T) -> bool) -> Vec<T> {
+        let mut vec = vec![];
+        for block in 0..self.blocks().unwrap_or(0) {
+            match self.remove(block) {
+                Ok(data) => {
+                    if filter(&data) {
+                        vec.push(data);
+                    }
+                }
+                Err(Error::EmptyBlock) => continue,
+                Err(Error::ContinuationBlock) => continue,
+                // We ignore IO errors, this may be a mistake (or not, only future will know)
+                _ => continue,
+            }
+        }
+        vec
+    }
 }
 
 impl<T: Serialize> Cabide<T> {
