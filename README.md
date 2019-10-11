@@ -19,12 +19,6 @@ This is a library that provides access to Cabide and HashCabide, two file based 
 
 `cargo doc --open`
 
-## To run all "tests" from CBD's spec
-
-To modify them change the files in the `examples` folder
-
-`cargo run --examples`
-
 ## Example
 
 ```rust
