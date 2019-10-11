@@ -1,5 +1,7 @@
 use cabide::Cabide;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{Ordering};
+use cabide::READ_BLOCKS_COUNT;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct Data {
@@ -21,10 +23,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(_e) => println!("Found nothing"),
     }
 
-    // TODO op reporting
     println!();
-    println!("used blocks: {}", cbd.blocks()?);
-    println!("read blocks: {}", 1);
+    println!("Used blocks: {}", cbd.blocks()?);
+    println!("Read blocks: {}", READ_BLOCKS_COUNT.load(Ordering::Relaxed));
 
     Ok(())
 }
