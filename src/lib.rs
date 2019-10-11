@@ -261,7 +261,6 @@ where
                 // EOF
                 break;
             }
-            READ_BLOCKS_COUNT.fetch_add(1, Ordering::SeqCst);
 
             if content.is_empty() && metadata[0] != expected_metadata as u8 {
                 // If its the first block and the metadata mismatch
@@ -277,6 +276,8 @@ where
                 // Stop reading if all of the object has been read
                 break;
             }
+
+            READ_BLOCKS_COUNT.fetch_add(1, Ordering::SeqCst);
 
             // Overwrite the metadata if needed (in case of removal)
             if empty_read_blocks {
