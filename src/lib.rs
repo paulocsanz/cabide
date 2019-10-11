@@ -261,6 +261,7 @@ where
                 // EOF
                 break;
             }
+            READ_BLOCKS_COUNT.fetch_add(1, Ordering::SeqCst);
 
             if content.is_empty() && metadata[0] != expected_metadata as u8 {
                 // If its the first block and the metadata mismatch
@@ -371,7 +372,6 @@ where
     /// # }
     /// ```
     pub fn read(&mut self, block: u64) -> Result<T, Error> {
-        READ_BLOCKS_COUNT.fetch_add(1, Ordering::SeqCst);
         return self.read_update_metadata(block, false);
     }
 
