@@ -70,6 +70,7 @@ where
 
             fs::copy(&self.sort_temp.1, &self.main.1)?;
             self.unordered_buffer.truncate()?;
+            self.sort_temp.0.truncate()?;
         }
         Ok(())
     }
@@ -83,7 +84,7 @@ enum Going {
 
 impl<T, F, G, OrderField> OrderCabide<T, F, G, OrderField>
 where
-    for<'de> T: Deserialize<'de>,
+    for<'de> T: Deserialize<'de> + std::fmt::Debug,
     F: Fn(&T) -> OrderField,
     G: Fn(&OrderField, &OrderField) -> Ordering,
 {
@@ -107,7 +108,8 @@ where
                                 if block == blocks {
                                     return None;
                                 } else {
-                                    block = block.saturating_add(1);
+                                    let missing = self.blocks().ok()? - block;
+                                    block = block.saturating_add(missing / 2);
                                 }
                             }
                             Ordering::Greater => {
@@ -115,7 +117,7 @@ where
                                 if block == 0 {
                                     return None;
                                 } else {
-                                    block = block.saturating_sub(1);
+                                    block = block.saturating_sub(block / 2);
                                 }
                             }
                         }

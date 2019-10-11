@@ -1,5 +1,10 @@
 /target
 **/*.rs.bk
-*.swp
+.*.swp
+.*.swo
 Cargo.lock
 *.db
+*.db.temp
+*.file
+workspace.xml
+.idea

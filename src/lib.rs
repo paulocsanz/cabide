@@ -240,8 +240,11 @@ impl<T> Cabide<T> {
     }
 
     #[inline]
-    pub fn truncate(&self) -> Result<(), Error> {
-        Ok(self.file.set_len(0)?)
+    pub fn truncate(&mut self) -> Result<(), Error> {
+        self.file.set_len(0)?;
+        self.next_block = 0;
+        self.empty_blocks.clear();
+        Ok(())
     }
 }
 
