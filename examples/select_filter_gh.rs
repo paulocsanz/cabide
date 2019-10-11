@@ -19,7 +19,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Found {} from {}", result.uhe, result.estagio);
     }
 
-
     // TODO op reporting
     println!();
     println!("used blocks: {}", cbd.blocks()?);

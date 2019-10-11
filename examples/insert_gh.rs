@@ -10,10 +10,9 @@ struct Data {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-
     let mut cbd: Cabide<Data> = Cabide::new("select.file", None)?;
 
-    let mut _data = Data{
+    let mut _data = Data {
         uhe: rand::random::<u64>(),
         cenario: rand::random::<u64>(),
         estagio: String::from("2017-08-01"),
@@ -21,7 +20,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     println!();
     println!("used blocks pre insert: {}", cbd.blocks()?);
-
 
     let _result = &cbd.write(&_data);
 

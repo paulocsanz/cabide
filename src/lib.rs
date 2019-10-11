@@ -48,10 +48,12 @@
 
 mod error;
 mod hash;
+mod order;
 pub mod protocol;
 
 pub use crate::error::Error;
 pub use crate::hash::HashCabide;
+pub use crate::order::OrderCabide;
 use crate::protocol::{Metadata, BLOCK_SIZE, CONTENT_SIZE, END_BYTE};
 
 use bincode::{deserialize, serialize};

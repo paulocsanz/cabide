@@ -10,13 +10,12 @@ struct Data {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-
     let mut cbd: Cabide<Data> = Cabide::new("select.file", None)?;
 
     // Change remove() arg to desired id
     let result = &cbd.remove(0);
 
-    match  result {
+    match result {
         Ok(_v) => println!("Found {} from {}", _v.uhe, _v.estagio),
         Err(_e) => println!("Found nothing"),
     }
