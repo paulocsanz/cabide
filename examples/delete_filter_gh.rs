@@ -12,7 +12,7 @@ struct Data {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cbd: Cabide<Data> = Cabide::new("select.file", None)?;
 
-    // Edit function passed to filter to change select condition
+    // Edit function passed to filter to change delete condition
     let results = cbd.remove_with(|student| student.estagio == "2017-01-01");
 
     for result in results.iter() {
