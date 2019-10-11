@@ -48,16 +48,21 @@
 
 mod error;
 mod hash;
+mod order;
 pub mod protocol;
 
 pub use crate::error::Error;
 pub use crate::hash::HashCabide;
+pub use crate::order::OrderCabide;
 use crate::protocol::{Metadata, BLOCK_SIZE, CONTENT_SIZE, END_BYTE};
 
 use bincode::{deserialize, serialize};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{collections::BTreeMap, fs::File, fs::OpenOptions, marker::PhantomData, path::Path};
+
+pub static READ_BLOCKS_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// Abstracts typed database binded to a specific file
 ///
@@ -366,7 +371,8 @@ where
     /// # }
     /// ```
     pub fn read(&mut self, block: u64) -> Result<T, Error> {
-        self.read_update_metadata(block, false)
+        READ_BLOCKS_COUNT.fetch_add(1, Ordering::SeqCst);
+        return self.read_update_metadata(block, false);
     }
 
     /// Returns first element to be selected by the `filter` function
@@ -507,9 +513,10 @@ where
     pub fn remove_with(&mut self, filter: impl Fn(&T) -> bool) -> Vec<T> {
         let mut vec = vec![];
         for block in 0..self.blocks().unwrap_or(0) {
-            match self.remove(block) {
+            match self.read(block) {
                 Ok(data) => {
                     if filter(&data) {
+                        self.remove(block).unwrap();
                         vec.push(data);
                     }
                 }
