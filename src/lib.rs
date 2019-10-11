@@ -257,13 +257,9 @@ where
 
         let mut metadata = [0];
         let mut expected_metadata = Metadata::Start;
-        loop {
-            // Reads block metadata
-            if Read::by_ref(&mut self.file).take(1).read(&mut metadata)? == 0 {
-                // EOF
-                break;
-            }
 
+        // Reads block until EOF
+        while Read::by_ref(&mut self.file).take(1).read(&mut metadata)? != 0 {
             if content.is_empty() && metadata[0] != expected_metadata as u8 {
                 // If its the first block and the metadata mismatch
                 if metadata[0] == Metadata::Empty as u8 {
