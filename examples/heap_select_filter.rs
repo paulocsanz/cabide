@@ -12,17 +12,13 @@ struct Data {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cbd: Cabide<Data> = Cabide::new("select.file", None)?;
+    let mut cbd: Cabide<Data> = Cabide::new("gh_head.file", None)?;
 
-    // Edit this array with start and end ids
-    let id_range: [u64; 2] = [0, 3];
+    // Edit function passed to filter to change select condition
+    let results = cbd.filter(|student| student.estagio == "2017-01-01");
 
-    for id in id_range[0]..id_range[1] {
-        let result = &cbd.read(id);
-        match result {
-            Ok(_v) => println!("Found {} from {}", _v.uhe, _v.estagio),
-            Err(_e) => println!("Found nothing"),
-        }
+    for result in results.iter() {
+        println!("Found {} from {}", result.uhe, result.estagio);
     }
 
     println!();

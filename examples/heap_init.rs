@@ -13,9 +13,9 @@ struct Data {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Truncates file to clear it for this run
-    File::create("select.file")?;
+    File::create("gh_head.file")?;
 
-    let mut cbd: Cabide<Data> = Cabide::new("select.file", None)?;
+    let mut cbd: Cabide<Data> = Cabide::new("gh_head.file", None)?;
 
     let mut csv = Reader::from_reader(File::open("data/gh_head.csv")?);
     for data in csv.deserialize() {
