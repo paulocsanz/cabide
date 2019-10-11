@@ -9,27 +9,21 @@ struct Data {
     geracao: f64,
 }
 
-const DATA_COUNT: usize = 10;
-
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 
-    let mut cbd: Cabide<Data> = Cabide::new("select.file", None)?;
+    let mut cbd: Cabide<Data> = Cabide::new("gh_head.file", None)?;
+
+    let mut _data = Data{
+        uhe: rand::random::<u64>(),
+        cenario: rand::random::<u64>(),
+        estagio: String::from("2017-08-01"),
+        geracao: rand::random::<f64>(),
+    };
     println!();
-    println!("Inserting {} entries", DATA_COUNT);
     println!("used blocks pre insert: {}", cbd.blocks()?);
 
-    for _i in 0..DATA_COUNT {
-        let mut _entry = Data{
-            uhe: rand::random::<u64>(),
-            cenario: rand::random::<u64>(),
-            estagio: String::from("2017-08-01"),
-            geracao: rand::random::<f64>(),
-        };
-        &cbd.write(&_entry);
-    }
 
-
+    let _result = &cbd.write(&_data);
 
     // TODO op reporting
     println!();

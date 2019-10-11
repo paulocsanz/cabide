@@ -10,15 +10,16 @@ struct Data {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cbd: Cabide<Data> = Cabide::new("select.file", None)?;
 
-    // Edit function passed to filter to change delete condition
-    let results = cbd.remove_with(|student| student.estagio == "2017-01-01");
+    let mut cbd: Cabide<Data> = Cabide::new("gh_head.file", None)?;
 
-    for result in results.iter() {
-        println!("Found {} from {}", result.uhe, result.estagio);
+    // Change remove() arg to desired id
+    let result = &cbd.remove(0);
+
+    match  result {
+        Ok(_v) => println!("Found {} from {}", _v.uhe, _v.estagio),
+        Err(_e) => println!("Found nothing"),
     }
-
 
     // TODO op reporting
     println!();
