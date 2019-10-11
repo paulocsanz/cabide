@@ -12,7 +12,7 @@ struct Data {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cbd: Cabide<Data> = Cabide::new("select.file", None)?;
+    let mut cbd: Cabide<Data> = Cabide::new("gh_head.db", None)?;
 
     let mut _data = Data {
         uhe: rand::random::<u64>(),

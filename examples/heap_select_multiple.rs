@@ -12,7 +12,7 @@ struct Data {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cbd: Cabide<Data> = Cabide::new("gh_head.file", None)?;
+    let mut cbd: Cabide<Data> = Cabide::new("gh_head.db", None)?;
 
     // Edit this array with all desired ids
     let ids: [u64; 2] = [0, 3];
