@@ -26,12 +26,10 @@
 //! let mut cbd: Cabide<Data> = Cabide::new("test.file", Some(1000))?;
 //! assert_eq!(cbd.blocks()?, 1000);
 //!
-//! // Since random_data only returns a data that fits in one block it writes continuously from last block
-//! for i in 0..100 {
-//!     // In this case each object only uses one block
+//! for _ in 0..100 {
 //!     let data = random_data();
-//!     assert_eq!(cbd.write(&data)?, i);
-//!     assert_eq!(cbd.read(i)?, data);
+//!     let primary_key = cbd.write(&data)?;
+//!     assert_eq!(cbd.read(primary_key), data);
 //! }
 //!
 //! cbd.remove(40)?;
@@ -98,11 +96,10 @@ pub static READ_BLOCKS_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// let mut cbd: Cabide<Data> = Cabide::new("test.file", Some(1000))?;
 /// assert_eq!(cbd.blocks()?, 1000);
 ///
-/// // Since random_data only returns a data that fits in one block it writes continuously from last block
-/// for i in 0..100 {
+/// for _ in 0..100 {
 ///     let data = random_data();
-///     assert_eq!(cbd.write(&data)?, i);
-///     assert_eq!(cbd.read(i)?, data);
+///     let primary_key = cbd.write(&data)?;
+///     assert_eq!(cbd.read(primary_key)?, data);
 /// }
 ///
 /// cbd.remove(40)?;
@@ -548,6 +545,7 @@ impl<T: Serialize> Cabide<T> {
     /// # std::fs::File::create("test7.file")?;
     /// let mut cbd: Cabide<u8> = Cabide::new("test7.file", None)?;
     ///
+    /// // Each u8 will always fit in one block
     /// for i in 0..1000 {
     ///     assert_eq!(cbd.write(&rand::random())?, i);
     /// }

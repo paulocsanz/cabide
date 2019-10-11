@@ -35,11 +35,10 @@ struct Data {
 let mut cbd: Cabide<Data> = Cabide::new("test.file", Some(1000))?;
 assert_eq!(cbd.blocks()?, 1000);
 
-// Since random_data only returns a data that fits in one block it writes continuously from last block
-for i in 0..100 {
+for _ in 0..100 {
     let data = random_data();
-    assert_eq!(cbd.write(&data)?, i);
-    assert_eq!(cbd.read(i)?, data);
+    let primary_key = cbd.write(&data)?;
+    assert_eq!(cbd.read(primary_key)?, data);
 }
 
 cbd.remove(40)?;
