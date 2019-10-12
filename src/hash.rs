@@ -82,4 +82,13 @@ where
             .ok_or(Error::NotExistant)?
             .remove(block)
     }
+
+    #[inline]
+    pub fn remove_with(&mut self, filter: impl Fn(&T) -> bool) -> Vec<T> {
+        let mut vec = vec![];
+        for cabide in self.cabides.values_mut() {
+            vec.extend(cabide.remove_with(&filter));
+        }
+        vec
+    }
 }
