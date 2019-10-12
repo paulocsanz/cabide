@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = &cbd.remove(('A' as u8, 0));
 
     match result {
-        Ok(_v) => println!("Found DRE:{} NAME:{}", result.dre, result.nome),
+        Ok(_v) => println!("Found DRE:{} NAME:{}", _v.dre, _v.nome),
         Err(_e) => println!("Found nothing"),
     }
 
