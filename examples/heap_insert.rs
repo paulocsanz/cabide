@@ -25,7 +25,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _result = &cbd.write(&_data);
 
-    // TODO op reporting
     println!();
     println!("Used blocks postinsert: {}", cbd.blocks()?);
     println!("Read blocks: {}", READ_BLOCKS_COUNT.load(Ordering::Relaxed));
