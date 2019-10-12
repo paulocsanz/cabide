@@ -28,9 +28,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
 
-    let result = &cbd.remove(|entry| entry.nome.starts_with('X'));
+    let result = &cbd.remove(|entry| entry.dre == "143670124");
 
-    println!("Found {} entries", result.len());
     println!();
     println!("Used blocks: {}", cbd.blocks()?);
     println!("Read blocks: {}", READ_BLOCKS_COUNT.load(Ordering::Relaxed));
