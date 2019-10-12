@@ -1,7 +1,7 @@
 use cabide::OrderCabide;
-use csv::Reader;
+use cabide::READ_BLOCKS_COUNT;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
+use std::sync::atomic::Ordering;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 struct Data {
@@ -13,7 +13,7 @@ struct Data {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let extract_name = |a: &Data| a.nome.clone();
+    let extract_nome = |a: &Data| a.nome.clone();
     let (buffer, ordered, temp) = (
         "alunos_head_buff.db",
         "alunos_head_ordered.db",
@@ -23,14 +23,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         buffer,
         ordered,
         temp,
-        Box::new(extract_name),
+        Box::new(extract_nome),
         Box::new(Ord::cmp),
     )?;
 
-    let mut csv = Reader::from_reader(File::open("data/alunos_head.csv")?);
-    for data in csv.deserialize() {
-        cbd.write(&data?)?;
-    }
+    // Edit function passed to filter to change select condition
+    let results = cbd.filter(|nome| str::cmp(nome, "Archy Rodway"));
+    println!("Found {:?}", results);
+
+    println!();
+    println!("Used blocks: {}", cbd.blocks()?);
+    println!("Read blocks: {}", READ_BLOCKS_COUNT.load(Ordering::Relaxed));
 
     Ok(())
 }

@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (buffer, ordered, temp) = (
         "alunos_head_buff.db",
         "alunos_head_ordered.db",
-        "alunos_head_ordered.db.temp",
+        "alunos_head_ordered.temp.db",
     );
     let mut cbd = OrderCabide::new(
         buffer,
@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     // Edit function passed to filter to change select condition
-    let results = cbd.filter(|nome| str::cmp(nome, "Archy Rodway")).unwrap();
+    let results = cbd.first(|nome| str::cmp(nome, "Archy Rodway"));
     println!("Found {:?}", results);
 
     println!();
