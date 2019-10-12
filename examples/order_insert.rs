@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut _name: String = thread_rng().sample_iter(&Alphanumeric).take(thread_rng().gen_range(4, 12)).collect();
     let _surname: String = thread_rng().sample_iter(&Alphanumeric).take(thread_rng().gen_range(4, 12)).collect();
 
-    let _fullname = format!("{} {}", _name, _surname);
+    let _fullname = format!("X{} {}", _name, _surname);
 
     let mut _data = Data {
         dre: format!("{}", thread_rng().gen_range(100_000_000, 999_999_999)),
@@ -48,6 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
     println!();
+    println!("{:?}", _data);
     println!("used blocks pre insert: {}", cbd.blocks()?);
 
     cbd.write(&_data)?;
