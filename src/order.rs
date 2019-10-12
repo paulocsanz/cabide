@@ -152,12 +152,9 @@ where
         vec
     }
 
-    pub fn remove(&mut self, order_by: impl Fn(&OrderField) -> Ordering) -> Vec<T> {
-        let (unordered_buffer, extract_order_field) =
-            (&mut self.unordered_buffer, &self.extract_order_field);
-        let mut vec = unordered_buffer
-            .remove_with(|data| order_by(&extract_order_field(data)) == Ordering::Equal);
-        vec.extend(self.main.0.remove_with(|data| order_by(&extract_order_field(data)) == Ordering::Equal));
+    pub fn remove(&mut self, filter: impl Fn(&T) -> bool) -> Vec<T> {
+        let mut vec = self.unordered_buffer.remove_with(&filter);
+        vec.extend(self.main.0.remove_with(filter));
         vec
     }
 }
