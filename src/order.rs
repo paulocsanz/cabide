@@ -152,6 +152,12 @@ where
         vec
     }
 
+    pub fn filter_any(&mut self, filter: impl Fn(&T) -> bool) -> Vec<T> {
+        let mut vec = self.unordered_buffer.filter(&filter);
+        vec.extend(self.main.0.filter(filter));
+        vec
+    }
+
     pub fn remove(&mut self, filter: impl Fn(&T) -> bool) -> Vec<T> {
         let mut vec = self.unordered_buffer.remove_with(&filter);
         vec.extend(self.main.0.remove_with(filter));
