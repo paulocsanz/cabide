@@ -147,107 +147,17 @@ where
         let (unordered_buffer, extract_order_field) =
             (&mut self.unordered_buffer, &self.extract_order_field);
         let mut vec = unordered_buffer
-            .filter(|data| order_by(&(extract_order_field)(data)) == Ordering::Equal);
-
-        let blocks = self.main.0.blocks().unwrap_or(0);
-        let mut block = blocks / 2;
-        let mut has_found_something = false;
-        let mut going = Going::Right;
-        loop {
-            if let Ok(data) = self.main.0.read(block) {
-                has_found_something = true;
-                match order_by(&(self.extract_order_field)(&data)) {
-                    Ordering::Equal => vec.push(data),
-                    Ordering::Less => {
-                        going = Going::Right;
-                        if block == blocks {
-                            return vec;
-                        } else {
-                            let missing = blocks - block;
-                            block = block.saturating_add(missing / 2);
-                        }
-                    }
-                    Ordering::Greater => {
-                        going = Going::Left;
-                        if block == 0 {
-                            return vec;
-                        } else {
-                            block = block.saturating_sub(block / 2);
-                        }
-                    }
-                }
-            } else if going == Going::Left {
-                if block == 0 {
-                    return vec;
-                } else {
-                    block = block.saturating_sub(1);
-                }
-            } else {
-                if block == blocks {
-                    if has_found_something {
-                        return vec;
-                    } else {
-                        going = Going::Left;
-                        block = blocks / 2;
-                    }
-                } else {
-                    block = block.saturating_add(1);
-                }
-            }
-        }
+            .filter(|data| order_by(&extract_order_field(data)) == Ordering::Equal);
+        vec.extend(self.main.0.filter(|data| order_by(&extract_order_field(data)) == Ordering::Equal));
+        vec
     }
 
     pub fn remove(&mut self, order_by: impl Fn(&OrderField) -> Ordering) -> Vec<T> {
         let (unordered_buffer, extract_order_field) =
             (&mut self.unordered_buffer, &self.extract_order_field);
         let mut vec = unordered_buffer
-            .remove_with(|data| order_by(&(extract_order_field)(data)) == Ordering::Equal);
-
-        let blocks = self.main.0.blocks().unwrap_or(0);
-        let mut block = blocks / 2;
-        let mut has_found_something = false;
-        let mut going = Going::Right;
-        loop {
-            if let Ok(data) = self.main.0.remove(block) {
-                has_found_something = true;
-                match order_by(&(self.extract_order_field)(&data)) {
-                    Ordering::Equal => vec.push(data),
-                    Ordering::Less => {
-                        going = Going::Right;
-                        if block == blocks {
-                            return vec;
-                        } else {
-                            let missing = blocks - block;
-                            block = block.saturating_add(missing / 2);
-                        }
-                    }
-                    Ordering::Greater => {
-                        going = Going::Left;
-                        if block == 0 {
-                            return vec;
-                        } else {
-                            block = block.saturating_sub(block / 2);
-                        }
-                    }
-                }
-            } else if going == Going::Left {
-                if block == 0 {
-                    return vec;
-                } else {
-                    block = block.saturating_sub(1);
-                }
-            } else {
-                if block == blocks {
-                    if has_found_something {
-                        return vec;
-                    } else {
-                        going = Going::Left;
-                        block = blocks / 2;
-                    }
-                } else {
-                    block = block.saturating_add(1);
-                }
-            }
-        }
+            .remove_with(|data| order_by(&extract_order_field(data)) == Ordering::Equal);
+        vec.extend(self.main.0.remove_with(|data| order_by(&extract_order_field(data)) == Ordering::Equal));
+        vec
     }
 }
