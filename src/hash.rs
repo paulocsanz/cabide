@@ -67,6 +67,15 @@ where
     }
 
     #[inline]
+    pub fn filter(&mut self, filter: impl Fn(&T) -> bool) -> Vec<T> {
+        let mut vec = vec![];
+        for cabide in self.cabides.values_mut() {
+            vec.extend(cabide.filter(&filter));
+        }
+        vec
+    }
+
+    #[inline]
     pub fn remove(&mut self, (hash, block): (u8, u64)) -> Result<T, Error> {
         self.cabides
             .get_mut(&hash)
