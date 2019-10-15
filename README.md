@@ -15,11 +15,13 @@ Free blocks in the middle of the file will be cached and prefered, but no data i
 
 ## Docs
 
-This is a library that provides access to Cabide and HashCabide, two file based databases each with its API documented with `cargo doc`
+This is a library that provides access to Cabide, OrderCabide and HashCabide, three types of file based databases each with its API documented with `cargo doc`
 
 `cargo doc --open`
 
-## Example
+## Cabide Example
+
+**OrderCabide's and HashCabide's API is similar, but they may have different complexities for different methods (and have some different methods)**
 
 ```rust
 use serde::{Serialize, Deserialize};
