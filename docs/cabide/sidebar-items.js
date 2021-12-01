@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Error","Enumerates all errors possible in this crate"]],"mod":[["protocol",""]],"static":[["READ_BLOCKS_COUNT",""]],"struct":[["Cabide","Abstracts typed database binded to a specific file"],["HashCabide",""],["OrderCabide",""]]});
